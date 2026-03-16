@@ -1,11 +1,12 @@
 name: Go Binaries
 
 on:
+  pull_request:
+    paths:
+      - "cluster-autoscaler/**"
   push:
-    branches:
-      - "canonical/*"
     tags:
-      - "cluster-autoscaler-*"
+      - "cluster-autoscaler-*-canonical*"
   workflow_dispatch: {}
 
 permissions:
@@ -61,11 +62,3 @@ jobs:
             cluster-autoscaler/${{ steps.package.outputs.tarball }}
             cluster-autoscaler/${{ steps.package.outputs.tarball }}.sha256sum
 
-      - name: Publish release assets
-        if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          fail_on_unmatched_files: true
-          files: |
-            cluster-autoscaler/${{ steps.package.outputs.tarball }}
-            cluster-autoscaler/${{ steps.package.outputs.tarball }}.sha256sum
