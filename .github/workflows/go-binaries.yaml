@@ -6,7 +6,7 @@ on:
       - "cluster-autoscaler/**"
   push:
     tags:
-      - "cluster-autoscaler-*-canonical*"
+      - "v*.*.*-canonical*"
   workflow_dispatch: {}
 
 permissions:
