@@ -1,0 +1,75 @@
+---
+name: Nightly Source Sync
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  sync-upstream:
+    name: Sync upstream branches and tags
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config --global user.name "Github Actions"
+          git config --global user.email "worker@org.com"
+
+      - name: Fetch upstream branches and tags
+        run: |
+          git remote add upstream https://github.com/kubernetes/autoscaler.git
+          git fetch --prune --prune-tags upstream \
+            '+refs/heads/*:refs/remotes/upstream/*' \
+            '+refs/tags/*:refs/tags/*'
+
+      - name: Force push mirror to origin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          git remote set-url origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          # Force-update all upstream branches.
+          git push --force origin 'refs/remotes/upstream/*:refs/heads/*'
+
+          # Prune only branches that disappeared upstream, excluding canonical/* custom branches.
+          mapfile -t upstream_branches < <(git for-each-ref --format='%(refname:strip=3)' refs/remotes/upstream)
+          while IFS= read -r ref; do
+            branch="${ref#refs/heads/}"
+            if [[ "$branch" == canonical/* ]]; then
+              continue
+            fi
+
+            if ! printf '%s\n' "${upstream_branches[@]}" | grep -Fxq "$branch"; then
+              git push origin --delete "$branch"
+            fi
+          done < <(git ls-remote --heads origin | awk '{print $2}')
+
+          # Force-update all upstream tags.
+          git push --force origin 'refs/tags/*:refs/tags/*'
+
+          # Prune origin-only tags unless they match v<major>.<minor>.<patch>-canonical<revision>.
+          mapfile -t upstream_tags < <(git ls-remote --tags --refs upstream | awk '{print $2}' | sed 's#^refs/tags/##')
+          while IFS= read -r ref; do
+            tag="${ref#refs/tags/}"
+
+            if [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-canonical[0-9]+$ ]]; then
+              continue
+            fi
+
+            if ! printf '%s\n' "${upstream_tags[@]}" | grep -Fxq "$tag"; then
+              git push origin ":refs/tags/${tag}"
+            fi
+          done < <(git ls-remote --tags --refs origin | awk '{print $2}')
