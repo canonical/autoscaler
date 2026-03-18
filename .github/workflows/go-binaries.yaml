@@ -1,0 +1,64 @@
+name: Go Binaries
+
+on:
+  pull_request:
+    paths:
+      - "cluster-autoscaler/**"
+  push:
+    tags:
+      - "v*.*.*-canonical*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Linux binaries (${{ matrix.goarch }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        goarch: [amd64, arm64, s390x]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: cluster-autoscaler/go.mod
+          cache-dependency-path: cluster-autoscaler/go.sum
+
+      - name: Build binary
+        working-directory: cluster-autoscaler
+        env:
+          CGO_ENABLED: 0
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          go build -o cluster-autoscaler-${{ matrix.goarch }} --ldflags="-s"
+
+      - name: Package binary
+        id: package
+        working-directory: cluster-autoscaler
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME:-${GITHUB_SHA::12}}"
+          safe_version="${version//\//-}"
+          safe_version="${safe_version//[^a-zA-Z0-9._-]/-}"
+          tarball="cluster-autoscaler-${safe_version}-linux-${{ matrix.goarch }}.tgz"
+          tar -czf "${tarball}" cluster-autoscaler-${{ matrix.goarch }}
+          sha256sum "${tarball}" > "${tarball}.sha256sum"
+          echo "tarball=${tarball}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cluster-autoscaler-linux-${{ matrix.goarch }}
+          path: |
+            cluster-autoscaler/${{ steps.package.outputs.tarball }}
+            cluster-autoscaler/${{ steps.package.outputs.tarball }}.sha256sum
+
