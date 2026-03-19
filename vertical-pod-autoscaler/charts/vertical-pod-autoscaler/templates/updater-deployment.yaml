@@ -11,7 +11,10 @@ metadata:
     {{- toYaml . | nindent 4 }}
   {{- end }}
 spec:
-  replicas: {{ .Values.updater.replicas }}
+  {{- with .Values.updater.replicas }}
+  replicas: {{ . }}
+  {{- end }}
+  revisionHistoryLimit: {{ .Values.updater.revisionHistoryLimit }}
   selector:
     matchLabels:
       {{- include "vertical-pod-autoscaler.updater.selectorLabels" . | nindent 6 }}

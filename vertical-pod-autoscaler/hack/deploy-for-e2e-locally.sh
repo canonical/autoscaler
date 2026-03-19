@@ -33,6 +33,12 @@ function print_help {
   echo " - admission-controller"
   echo " - actuation"
   echo " - full-vpa"
+  echo ""
+  echo "Environment variables:"
+  echo "  REGISTRY           - Container image registry (default: localhost:5001)"
+  echo "  TAG                - Container image tag (default: latest)"
+  echo "  FEATURE_GATES      - Comma-separated list of feature gates to enable"
+  echo "  EXTRA_HELM_VALUES  - Path to an additional Helm values file to use during installation"
 }
 
 if [ $# -eq 0 ]; then
@@ -71,8 +77,10 @@ export REGISTRY=${REGISTRY:-localhost:5001}
 export TAG=${TAG:-latest}
 
 
-# Deploy metrics server for E2E tests
-kubectl apply -f "${SCRIPT_ROOT}/hack/e2e/k8s-metrics-server.yaml"
+# Deploy metrics server for E2E tests via Helm chart
+helm repo add metrics-server https://kubernetes-sigs.github.io/metrics-server/
+helm repo update metrics-server
+helm upgrade --install --set args={--kubelet-insecure-tls} metrics-server metrics-server/metrics-server --namespace kube-system --version 3.13.0 --wait
 
 # Build and load Docker images for each component
 for COMPONENT in ${COMPONENTS}; do
@@ -224,6 +232,12 @@ EOF
     break
   fi
 done
+
+# Extra Helm values file
+if [[ -n "${EXTRA_HELM_VALUES:-}" ]]; then
+  echo " ** Using extra Helm values from: ${EXTRA_HELM_VALUES}"
+  HELM_SET_ARGS=("--values" "${EXTRA_HELM_VALUES}" "${HELM_SET_ARGS[@]}")
+fi
 
 # Install/Upgrade VPA using Helm chart
 echo " ** Installing/Upgrading VPA via Helm chart"
